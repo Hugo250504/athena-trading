@@ -3,6 +3,7 @@ ATHENA Trading - Data Fetcher
 Récupère les bougies OHLC depuis Twelve Data pour une paire et un timeframe donnés.
 """
 
+import time
 import requests
 from config import TWELVE_DATA_API_KEY
 
@@ -53,6 +54,8 @@ def fetch_all_pairs_data(pairs: list[str], htf_interval: str, exec_interval: str
                           htf_lookback: int, exec_lookback: int) -> dict:
     """
     Récupère les données HTF (biais) et exécution pour toutes les paires suivies.
+    Espace les appels pour respecter le quota du plan gratuit Twelve Data
+    (8 requêtes/minute) : on attend ~8 secondes entre chaque paire.
 
     Retourne : {
         "EUR/USD": {"htf": [...], "exec": [...]},
@@ -60,7 +63,9 @@ def fetch_all_pairs_data(pairs: list[str], htf_interval: str, exec_interval: str
     }
     """
     result = {}
-    for pair in pairs:
+    for idx, pair in enumerate(pairs):
+        if idx > 0:
+            time.sleep(8)  # espacement pour rester sous la limite de débit
         try:
             htf_candles = fetch_candles(pair, htf_interval, htf_lookback)
             exec_candles = fetch_candles(pair, exec_interval, exec_lookback)

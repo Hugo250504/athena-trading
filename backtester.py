@@ -8,6 +8,7 @@ Usage : python3 backtester.py
 """
 
 import json
+import time
 from data_fetcher import fetch_candles
 from ict_engine import (
     determine_bias, get_virgin_pd_arrays, calculate_ote_zone,
@@ -149,10 +150,13 @@ def run_full_backtest():
     """Lance le backtest sur toutes les paires configurées et affiche les résultats."""
     all_trades = []
 
-    for pair in PAIRS:
+    for idx, pair in enumerate(PAIRS):
         print(f"\n--- Backtest {pair} ---")
         try:
+            if idx > 0:
+                time.sleep(8)  # respecte le quota Twelve Data (8 req/min sur plan gratuit)
             htf_candles = fetch_candles(pair, "1day", outputsize=5000)
+            time.sleep(8)
             exec_candles = fetch_candles(pair, "4h", outputsize=5000)
         except Exception as e:
             print(f"Erreur récupération données pour {pair}: {e}")
