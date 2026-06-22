@@ -9,6 +9,8 @@ import os
 # ── Clés API (à définir en variables d'environnement, jamais en dur dans le code) ──
 TWELVE_DATA_API_KEY = os.environ.get("TWELVE_DATA_API_KEY", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # ── Paires Forex suivies ──
 PAIRS = ["EUR/USD", "GBP/USD", "USD/JPY"]
@@ -30,10 +32,10 @@ ZONE_OVERLAP_TOLERANCE = 0.05
 
 # ── Scoring GPT ──
 GPT_MODEL = "gpt-4.1-mini"
-SCORE_THRESHOLD = 70        # Seuil au-dessus duquel Pine Script affichera le setup (0-100)
+SCORE_THRESHOLD = 70        # Seuil au-dessus duquel une alerte Telegram est envoyée (0-100)
 
 # ── Polling ──
 POLL_INTERVAL_SECONDS = 240  # Fréquence de recalcul (4 min, cohérent avec exécution H4)
 
-# ── Fichier de publication (ce que Pine Script ira lire via le pont externe) ──
+# ── Fichier de publication (utile pour debug local + endpoint /signals) ──
 PUBLISH_FILE = "latest_signals.json"
