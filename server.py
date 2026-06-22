@@ -24,6 +24,7 @@ from data_fetcher import fetch_all_pairs_data
 from ict_engine import find_candidate_setups
 from gpt_scorer import score_all_setups
 from telegram_notifier import send_all_alerts
+from backtester import run_full_backtest
 
 app = FastAPI(title="ATHENA Trading Signal Server")
 
@@ -127,3 +128,21 @@ def get_signals_for_pair(pair: str):
     with _lock:
         pair_signals = [s for s in latest_results["signals"] if s["pair"] == pair]
         return {"updated_at": latest_results["updated_at"], "signals": pair_signals}
+
+
+@app.get("/backtest")
+def run_backtest_endpoint():
+    """
+    Lance le backtest complet de la stratégie sur l'historique disponible
+    (max permis par le plan Twelve Data) et retourne winrate, RR moyen,
+    profit factor par paire et globalement.
+
+    ATTENTION : peut prendre plusieurs dizaines de secondes selon le volume
+    de données et les limites de débit de l'API.
+    """
+    trades, stats = run_full_backtest()
+    return {
+        "global_stats": stats,
+        "trades_sample": trades[:20],  # échantillon pour ne pas surcharger la réponse
+        "total_trades_detail": len(trades),
+    }
