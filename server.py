@@ -146,3 +146,44 @@ def run_backtest_endpoint():
         "trades_sample": trades[:20],  # échantillon pour ne pas surcharger la réponse
         "total_trades_detail": len(trades),
     }
+
+
+@app.get("/diagnose")
+def diagnose_endpoint():
+    """
+    Endpoint de diagnostic léger : vérifie la récupération des données et
+    compte les éléments détectés à chaque étape du pipeline, sans lancer
+    le backtest complet (rapide, pour identifier où ça bloque).
+    """
+    from data_fetcher import fetch_candles
+    from ict_engine import determine_bias, get_virgin_pd_arrays, calculate_ote_zone
+
+    pair = "EUR/USD"
+    result = {"pair": pair}
+
+    try:
+        htf_candles = fetch_candles(pair, "1day", outputsize=300)
+        exec_candles = fetch_candles(pair, "4h", outputsize=300)
+    except Exception as e:
+        return {"error": f"Erreur fetch: {e}"}
+
+    result["htf_count"] = len(htf_candles)
+    result["exec_count"] = len(exec_candles)
+    result["htf_range"] = [htf_candles[0]["datetime"], htf_candles[-1]["datetime"]] if htf_candles else None
+    result["exec_range"] = [exec_candles[0]["datetime"], exec_candles[-1]["datetime"]] if exec_candles else None
+
+    if not htf_candles or not exec_candles:
+        result["error"] = "Pas de données récupérées"
+        return result
+
+    bias_info = determine_bias(htf_candles)
+    result["current_bias"] = bias_info
+
+    virgin_arrays = get_virgin_pd_arrays(exec_candles)
+    result["virgin_arrays_count"] = len(virgin_arrays)
+    result["virgin_arrays_types"] = [a["type"] for a in virgin_arrays[:10]]
+
+    ote = calculate_ote_zone(exec_candles, bias_info["bias"])
+    result["ote_zone"] = ote
+
+    return result
