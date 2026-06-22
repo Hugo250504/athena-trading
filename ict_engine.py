@@ -34,34 +34,39 @@ def find_swing_points(candles: list[dict], window: int = 2) -> list[dict]:
 
 def determine_bias(candles: list[dict]) -> dict:
     """
-    Détermine le biais directionnel (bullish/bearish/neutral) à partir
-    de la séquence des derniers swing highs/lows (structure de marché simplifiée).
+    Détermine le biais directionnel (bullish/bearish/neutral) en se basant sur
+    le dernier Break of Structure (BOS) confirmé : le prix de clôture qui dépasse
+    le dernier swing high (-> bullish) ou le dernier swing low (-> bearish).
 
-    Logique : si les derniers swings forment des higher-highs + higher-lows -> bullish
-    Si lower-highs + lower-lows -> bearish
-    Sinon -> neutral (pas de biais clair, le setup sera ignoré)
+    C'est plus robuste que d'exiger un alignement parfait higher-high/higher-low
+    sur les 2 derniers swings, qui est trop restrictif sur des données réelles
+    (le marché "respire" et produit souvent des swings mixtes).
     """
     swings = find_swing_points(candles)
-    if len(swings) < 4:
+    if len(swings) < 2:
         return {"bias": "neutral", "reason": "pas assez de swings détectés"}
 
-    highs = [s for s in swings if s["type"] == "high"][-2:]
-    lows = [s for s in swings if s["type"] == "low"][-2:]
+    # On parcourt les bougies du plus récent au plus ancien et on cherche
+    # le premier moment où le prix de clôture casse un swing précédent
+    for i in range(len(candles) - 1, 0, -1):
+        close_price = candles[i]["close"]
 
-    if len(highs) < 2 or len(lows) < 2:
-        return {"bias": "neutral", "reason": "swings insuffisants"}
+        # Dernier swing high/low formé avant cette bougie
+        prior_highs = [s for s in swings if s["index"] < i and s["type"] == "high"]
+        prior_lows = [s for s in swings if s["index"] < i and s["type"] == "low"]
 
-    higher_high = highs[-1]["price"] > highs[-2]["price"]
-    higher_low = lows[-1]["price"] > lows[-2]["price"]
-    lower_high = highs[-1]["price"] < highs[-2]["price"]
-    lower_low = lows[-1]["price"] < lows[-2]["price"]
+        if not prior_highs or not prior_lows:
+            continue
 
-    if higher_high and higher_low:
-        return {"bias": "bullish", "reason": "higher-high + higher-low"}
-    if lower_high and lower_low:
-        return {"bias": "bearish", "reason": "lower-high + lower-low"}
+        last_high = prior_highs[-1]["price"]
+        last_low = prior_lows[-1]["price"]
 
-    return {"bias": "neutral", "reason": "structure mixte"}
+        if close_price > last_high:
+            return {"bias": "bullish", "reason": f"BOS haussier (clôture {close_price:.5f} > swing high {last_high:.5f})"}
+        if close_price < last_low:
+            return {"bias": "bearish", "reason": f"BOS baissier (clôture {close_price:.5f} < swing low {last_low:.5f})"}
+
+    return {"bias": "neutral", "reason": "aucun BOS récent détecté"}
 
 
 # ───────────────────────── PD ARRAYS (FVG, OB, BB) ─────────────────────────
