@@ -174,12 +174,13 @@ def calculate_ote_zone(candles: list[dict], bias: str) -> dict | None:
     """
     Calcule la zone OTE (62%-79% Fib) de la dernière impulsion dans le sens du biais.
 
-    Pour un biais bullish : on cherche le dernier swing low, puis le swing high
-    le plus récent formé APRÈS ce swing low (l'impulsion haussière la plus récente).
-    Pour bearish : logique inverse.
+    Pour bullish : impulsion = du dernier swing low confirmé jusqu'au point le plus
+    haut atteint depuis (même si ce point haut n'est pas encore confirmé par un
+    swing officiel - l'impulsion peut être encore en cours).
+    Pour bearish : logique inverse (dernier swing high -> point le plus bas atteint depuis).
     """
     swings = find_swing_points(candles)
-    if len(swings) < 2:
+    if len(swings) < 1:
         return None
 
     highs = [s for s in swings if s["type"] == "high"]
@@ -189,32 +190,33 @@ def calculate_ote_zone(candles: list[dict], bias: str) -> dict | None:
         if not lows:
             return None
         last_low = lows[-1]
-        candidate_highs = [h for h in highs if h["index"] > last_low["index"]]
-        if not candidate_highs:
+        # Point le plus haut atteint depuis ce swing low (impulsion en cours ou terminée)
+        candles_since = candles[last_low["index"]:]
+        if len(candles_since) < 2:
             return None
-        last_high = candidate_highs[-1]
+        highest_price = max(c["high"] for c in candles_since)
 
-        impulse_range = last_high["price"] - last_low["price"]
+        impulse_range = highest_price - last_low["price"]
         if impulse_range <= 0:
             return None
-        ote_top = last_high["price"] - OTE_FIB_LOW * impulse_range
-        ote_bottom = last_high["price"] - OTE_FIB_HIGH * impulse_range
+        ote_top = highest_price - OTE_FIB_LOW * impulse_range
+        ote_bottom = highest_price - OTE_FIB_HIGH * impulse_range
         return {"top": ote_top, "bottom": ote_bottom, "direction": "bullish"}
 
     if bias == "bearish":
         if not highs:
             return None
         last_high = highs[-1]
-        candidate_lows = [l for l in lows if l["index"] > last_high["index"]]
-        if not candidate_lows:
+        candles_since = candles[last_high["index"]:]
+        if len(candles_since) < 2:
             return None
-        last_low = candidate_lows[-1]
+        lowest_price = min(c["low"] for c in candles_since)
 
-        impulse_range = last_low["price"] - last_high["price"]
+        impulse_range = last_high["price"] - lowest_price
         if impulse_range <= 0:
             return None
-        ote_top = last_low["price"] - OTE_FIB_HIGH * impulse_range
-        ote_bottom = last_low["price"] - OTE_FIB_LOW * impulse_range
+        ote_top = lowest_price + OTE_FIB_HIGH * impulse_range
+        ote_bottom = lowest_price + OTE_FIB_LOW * impulse_range
         return {"top": ote_top, "bottom": ote_bottom, "direction": "bearish"}
 
     return None
