@@ -1,12 +1,15 @@
 services:
-  - type: web
-    name: athena-trading-signals
+  - type: cron
+    name: athena-daily-check
     runtime: python
     plan: free
+    schedule: "0 9,13 * * *"
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    startCommand: python daily_check.py
     envVars:
       - key: TWELVE_DATA_API_KEY
         sync: false
-      - key: OPENAI_API_KEY
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
         sync: false
