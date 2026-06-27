@@ -34,6 +34,13 @@ RETEST_MARGIN  = 0.001 # ±0.1%
 API_KEY    = os.environ.get("TWELVE_DATA_API_KEY", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+# Google Sheets — variable d'environnement attendue : GOOGLE_SERVICE_ACCOUNT_JSON
+# Valeur = contenu JSON brut du fichier de compte de service (pas un chemin de fichier)
+GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+# Nom exact du Google Sheet à créer dans Drive
+GOOGLE_SHEET_NAME = os.environ.get("GOOGLE_SHEET_NAME", "ATHENA Trading Log")
+
 CACHE_DIR  = os.path.join(os.path.dirname(__file__), "cache")
 CACHE_TTL  = 3600      # 1h — les données H4 ne changent pas plus souvent
 
@@ -203,8 +210,6 @@ def analyze_today(symbol, candles, cfg):
     entry_price = broken_level
 
     # Le trade est-il encore ouvert ou déjà clôturé ?
-    post_entry = [c for c in today_candles if c["dt"] > retest_candle["dt"]]
-    # Inclut aussi les bougies des jours suivants si le trade déborde
     all_after = [c for c in candles if c["dt"] > retest_candle["dt"]]
 
     result  = None
@@ -347,6 +352,101 @@ def send_telegram(text):
         return False
 
 
+# ── Google Sheets ─────────────────────────────────────────────────────────────
+
+def _get_gspread_client():
+    """Crée et retourne un client gspread authentifié via compte de service."""
+    import gspread
+    from google.oauth2.service_account import Credentials
+
+    if not GOOGLE_SERVICE_ACCOUNT_JSON:
+        raise RuntimeError("GOOGLE_SERVICE_ACCOUNT_JSON non défini.")
+
+    service_account_info = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    creds = Credentials.from_service_account_info(service_account_info, scopes=scopes)
+    return gspread.authorize(creds)
+
+
+def _ensure_header(worksheet):
+    """Ajoute la ligne d'en-tête si la feuille est vide."""
+    header = [
+        "Date", "Actif", "Statut", "Direction",
+        "Range Low", "Range High", "Entrée", "Stop Loss", "Take Profit",
+        "Résultat", "Notes",
+    ]
+    first_row = worksheet.row_values(1)
+    if not first_row:
+        worksheet.append_row(header, value_input_option="USER_ENTERED")
+
+
+def append_to_sheet(symbol, state, cfg):
+    """
+    Ajoute une ligne au Google Sheet.
+    Ne lève jamais d'exception — les erreurs sont loguées sans interrompre le flux.
+    """
+    try:
+        client = _get_gspread_client()
+        sheet  = client.open(GOOGLE_SHEET_NAME)
+        ws     = sheet.sheet1
+
+        _ensure_header(ws)
+
+        today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+        s     = state["status"]
+
+        # Correspondance status → libellé lisible
+        status_labels = {
+            "no_asian":        "Session asiatique incomplète",
+            "no_breakout":     "Pas de cassure",
+            "breakout_pending":"Cassure — retest en attente",
+            "window_expired":  "Fenêtre expirée",
+            "setup_active":    "Setup actif",
+            "setup_closed":    "Setup clôturé",
+        }
+
+        direction   = state.get("direction", "")
+        range_low   = state.get("asian_low", "")
+        range_high  = state.get("asian_high", "")
+        entry       = state.get("entry", "")
+        stop_loss   = state.get("stop_loss", "")
+        take_profit = state.get("take_profit", "")
+        result      = state.get("result", "")
+
+        # Notes contextuelles
+        notes_parts = []
+        if s == "setup_closed" and state.get("exit_dt"):
+            notes_parts.append(f"Clôture {state['exit_dt'][11:16]} UTC")
+        if s in ("setup_active", "setup_closed") and state.get("retest_dt"):
+            notes_parts.append(f"Retest {state['retest_dt'][11:16]} UTC")
+        if s == "window_expired":
+            notes_parts.append("Retest non produit dans la fenêtre 4h")
+        notes = " | ".join(notes_parts) if notes_parts else state.get("msg", "")
+
+        row = [
+            today,
+            symbol,
+            status_labels.get(s, s),
+            direction,
+            range_low   if range_low   != "" else "",
+            range_high  if range_high  != "" else "",
+            entry       if entry       != "" else "",
+            stop_loss   if stop_loss   != "" else "",
+            take_profit if take_profit != "" else "",
+            result,
+            notes,
+        ]
+
+        ws.append_row(row, value_input_option="USER_ENTERED")
+        log(f"  ✓ Google Sheets : ligne ajoutée ({symbol})")
+
+    except Exception as e:
+        log(f"  ⚠️  Google Sheets ({symbol}) : {e} — ligne non écrite (Telegram non affecté)")
+
+
 # ── Point d'entrée ────────────────────────────────────────────────────────────
 
 def main():
@@ -375,6 +475,9 @@ def main():
             msg = build_message(symbol, state, cfg)
             log(msg)
             full_message.append(msg)
+
+            # Écriture Google Sheets — n'interrompt jamais le flux principal
+            append_to_sheet(symbol, state, cfg)
 
         except Exception as e:
             msg = f"\n{symbol} : erreur — {e}"
