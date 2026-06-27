@@ -2,7 +2,7 @@ services:
   - type: cron
     name: athena-daily-check
     runtime: python
-    plan: free
+    plan: starter
     schedule: "0 9,13 * * *"
     buildCommand: pip install -r requirements.txt
     startCommand: python daily_check.py
